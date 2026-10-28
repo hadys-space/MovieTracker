@@ -16,12 +16,12 @@ def create_movie_app(testing=False):
     migrate.init_app(movie_app, db)
 
         
-    '''if not movie_app.config.get("TESTING", False):'''
+    '''if not movie_app.config.get("TESTING", False):
     if not testing:
         with movie_app.app_context():
             with db.engine.connect() as connection: 
                  result = connection.execute(text("SELECT 1"))
-                 print("Database connection successful!:", result.scalar())
+                 print("Database connection successful!:", result.scalar())'''
 
     @movie_app.route('/')
     def home():
