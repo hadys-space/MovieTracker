@@ -7,21 +7,25 @@ import models
 from models import Genre
 
 
-def create_movie_app():
+def create_movie_app(testing=False):
     movie_app = Flask(__name__)
     movie_app.config.from_object(Config)
+    movie_app.config['TESTING'] = testing
 
     db.init_app(movie_app)
     migrate.init_app(movie_app, db)
 
-    with movie_app.app_context():
-        with db.engine.connect() as connection:
-            result = connection.execute(text("SELECT 1"))
-            print("Database connection successful!:", result.scalar())
+        
+    '''if not movie_app.config.get("TESTING", False):'''
+    if not testing:
+        with movie_app.app_context():
+            with db.engine.connect() as connection: 
+                 result = connection.execute(text("SELECT 1"))
+                 print("Database connection successful!:", result.scalar())
 
     @movie_app.route('/')
     def home():
-        return {'message': 'Welcome to the Movie Tracker API!'}
+        return {'message': 'This is the Movie Tracker API!'}
 
     @movie_app.route('/test-db')
     def test_db():
