@@ -1,4 +1,5 @@
 from unittest.mock import patch
+
 from app import create_movie_app
 
 

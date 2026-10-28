@@ -4,3 +4,4 @@ Flask-Migrate
 SQLAlchemy
 pyodbc
 python_dotenv
+ruff

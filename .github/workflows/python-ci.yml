@@ -35,3 +35,6 @@ jobs:
 
       - name: Run automated tests
         run: python -m pytest
+
+      - name: Check code quality with ruff
+        run: python -m ruff check .

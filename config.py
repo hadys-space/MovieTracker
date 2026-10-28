@@ -1,7 +1,6 @@
 import os
 from urllib.parse import quote_plus
 
-from flask_migrate import Config
 
 def get_database_uri():
     SQL_SERVER = os.getenv("SQL_SERVER", "localhost")

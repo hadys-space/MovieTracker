@@ -6,12 +6,12 @@ from werkzeug.security import generate_password_hash
 from app import create_movie_app
 from extensions import db
 from models import (
-    User,
     Director,
     Genre,
     Movie,
-    UserCollection,
     ThirdPartyRating,
+    User,
+    UserCollection,
 )
 
 

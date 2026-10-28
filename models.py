@@ -1,8 +1,8 @@
 
-from sqlalchemy.dialects.mssql import UNIQUEIDENTIFIER
 from sqlalchemy import text
-from extensions import db
+from sqlalchemy.dialects.mssql import UNIQUEIDENTIFIER
 
+from extensions import db
 
 # Movies and Directors relationship
 MovieDirectors = db.Table(
