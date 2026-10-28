@@ -1,0 +1,80 @@
+Use MovieTrackerDB;
+
+Go
+
+Create table dbo.Users(
+	userID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID() PRIMARY KEY,
+	userName VARCHAR(25) NOT NULL UNIQUE,
+	email VARCHAR(25) NOT NULL UNIQUE,
+	userPassword NVARCHAR(100) NOT NULL
+);
+
+
+Create table dbo.Directors(
+	directorID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID() PRIMARY KEY,
+	directorName NVARCHAR(50) NOT NULL UNIQUE
+);
+
+
+Create table dbo.Movies(
+	movieID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID() PRIMARY KEY,
+	TMDB_ID INT NULL,
+    thumbnailURL NVARCHAR(500) NULL,
+	title NVARCHAR(25) NOT NULL,
+	releaseYear SMALLINT NULL,
+	synopsis NVARCHAR(500) NULL
+);
+
+
+
+Create table dbo.Genres(
+	genreID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID() PRIMARY KEY,
+	genre VARCHAR(25) NOT NULL
+);
+
+
+Create table dbo.MovieDirectors(
+	movieID UNIQUEIDENTIFIER NOT NULL, 
+	directorID UNIQUEIDENTIFIER NOT NULL,
+
+	PRIMARY KEY (movieID, directorID),
+
+	FOREIGN KEY (movieID) REFERENCES dbo.Movies(movieID),
+	FOREIGN KEY (directorID) REFERENCES dbo.Directors(directorID)
+
+);
+
+Create table dbo.MovieGenres(
+	movieID UNIQUEIDENTIFIER NOT NULL, 
+	genreID UNIQUEIDENTIFIER NOT NULL,
+
+	PRIMARY KEY (movieID, genreID),
+
+	FOREIGN KEY (movieID) REFERENCES dbo.Movies(movieID),
+	FOREIGN KEY (genreID) REFERENCES dbo.Genres(genreID)
+
+);
+
+
+Create table dbo.ThirdPartyRating(
+	third_Party_Rating UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID() PRIMARY KEY,
+	userID UNIQUEIDENTIFIER NOT NULL,
+	movieID UNIQUEIDENTIFIER NOT NULL,
+	externalRater VARCHAR(100) NOT NULL,
+	ratingValue Varchar(30) NOT NULL,
+
+	FOREIGN KEY (movieID) REFERENCES dbo.Movies(movieID)
+
+);
+
+Create table dbo.UserCollections(
+	collectionID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID() PRIMARY KEY,
+	userID UNIQUEIDENTIFIER NOT NULL,
+	movieID UNIQUEIDENTIFIER NOT NULL,
+    rating Decimal(2,1) NULL,
+
+	FOREIGN KEY (userID) REFERENCES dbo.Users(userID),
+	FOREIGN KEY (movieID) REFERENCES dbo.Movies(movieID)
+
+);
+Go
