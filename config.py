@@ -1,12 +1,14 @@
 import os
 from urllib.parse import quote_plus
+from dotenv import load_dotenv
 
+load_dotenv(r"C:\MovieTracker\.env")
 
 def get_database_uri():
     SQL_SERVER = os.getenv("SQL_SERVER", "localhost")
     SQL_DATABASE = "MovieTrackerDB"
-    SQL_USER_NAME = os.getenv("SQL_USER_NAME", "")
-    SQL_PASSWORD = os.getenv("SQL_PASSWORD", "")
+    SQL_USER_NAME = os.getenv("SQL_USER_NAME")
+    SQL_PASSWORD = os.getenv("SQL_PASSWORD")
 
     
     
