@@ -183,13 +183,25 @@ def create_movie_app(testing=False):
             userName=Username
         ).first()
 
-        if not moviePerson or not check_password_hash(
-            moviePerson.userPassword,
-            Password
+        if not moviePerson or not check_password_hash(moviePerson.userPassword, Password
         ):
             return {
                 'message': 'Invalid username or password.'
             }, 401
+
+        moviePerson = User.query.filter_by(
+            userName=Username
+        ).first()
+
+        print("Username received:", repr(Username))
+        print("User found:", moviePerson is not None)
+
+        if moviePerson:
+            print("Password hash exists:", bool(moviePerson.userPassword))
+            print(
+                "Password verification:",
+                check_password_hash(moviePerson.userPassword, Password)
+            )
 
         access_token = create_access_token(
             identity=str(moviePerson.userID)
@@ -270,64 +282,257 @@ def create_movie_app(testing=False):
             'genres': [genre.genre for genre in genres]
         }, 200
 
+   
+    
     @movie_app.route('/search', methods=['GET'])
     def search_movies():
         movie_request = request.args.get('query', '').strip()
+        search_type = request.args.get('type', 'title').strip().lower()
 
         if not movie_request:
             return {
-                'message': "Enter a movie title, genre or director's name."
+                'message': 'Enter a movie title, genre or director name.'
             }, 400
 
-        movies = (
-            db.session.query(Movie)
-            .outerjoin(Movie.directors)
-            .outerjoin(Movie.genres)
-            .filter(
-                or_(
-                    Movie.title.ilike(f'%{movie_request}%'),
-                    Director.directorName.ilike(f'%{movie_request}%'),
-                    Genre.genre.ilike(f'%{movie_request}%')
+        if search_type not in ['title', 'genre', 'director']:
+            return {
+                'message': 'Invalid search type. Use title, genre or director.'
+            }, 400
+
+        try:
+            local_query = db.session.query(Movie)
+
+            if search_type == 'title':
+                local_query = local_query.filter(
+                    Movie.title.ilike(f'%{movie_request}%')
                 )
-            )
-            .distinct()
-            .all()
-        )
 
-        if not movies:
-            return {'message': 'Movie not found.'}, 404
+            elif search_type == 'director':
+                local_query = (
+                    local_query
+                    .join(Movie.directors)
+                    .filter(
+                        Director.directorName.ilike(
+                            f'%{movie_request}%'
+                        )
+                    )
+                )
 
-        movie_list = []
+            elif search_type == 'genre':
+                local_query = (
+                    local_query
+                    .join(Movie.genres)
+                    .filter(
+                        Genre.genre.ilike(f'%{movie_request}%')
+                    )
+                )
 
-        for movie in movies:
-            movie_list.append({
-                'movieID': str(movie.movieID),
-                'thumbnailURL': movie.thumbnailURL,
-                'title': movie.title,
-                'releaseYear': movie.releaseYear,
-                'synopsis': movie.synopsis,
-                'directors': [
-                    director.directorName
-                    for director in movie.directors
-                ],
-                'genres': [
-                    genre.genre
-                    for genre in movie.genres
-                ],
-                'thirdPartyRatings': [
-                    {
-                        'externalRater': rating.externalRater,
-                        'ratingValue': rating.ratingValue
-                    }
-                    for rating in movie.thirdPartyRatings
+            movies = local_query.distinct().all()
+
+            movie_list = []
+
+            for movie in movies:
+                movie_list.append({
+                    'movieID': str(movie.movieID),
+                    'TMDB_ID': movie.TMDB_ID,
+                    'thumbnailURL': movie.thumbnailURL,
+                    'title': movie.title,
+                    'releaseYear': movie.releaseYear,
+                    'synopsis': movie.synopsis,
+                    'directors': [
+                        director.directorName
+                        for director in movie.directors
+                    ],
+                    'genres': [
+                        genre.genre
+                        for genre in movie.genres
+                    ],
+                    'thirdPartyRatings': [
+                        {
+                            'externalRater': rating.externalRater,
+                            'ratingValue': rating.ratingValue
+                        }
+                        for rating in movie.thirdPartyRatings
+                    ]
+                })
+
+            if movie_list:
+                return {
+                    'source': 'database',
+                    'search_type': search_type,
+                    'movie_request': movie_request,
+                    'result_count': len(movie_list),
+                    'movies': movie_list
+                }, 200
+
+            tmdb_api_key = os.getenv('TMDB_API_KEY')
+
+            if not tmdb_api_key:
+                return {
+                    'message': 'TMDB API key is not setup.'
+                }, 500
+
+            tmdb_movies = []
+
+            if search_type == 'title':
+                tmdb_response = requests.get(
+                    'https://api.themoviedb.org/3/search/movie',
+                    params={
+                        'api_key': tmdb_api_key,
+                        'query': movie_request
+                    },
+                    timeout=20
+                )
+
+                tmdb_response.raise_for_status()
+                tmdb_movies = tmdb_response.json().get('results', [])
+
+            elif search_type == 'director':
+                person_response = requests.get(
+                    'https://api.themoviedb.org/3/search/person',
+                    params={
+                        'api_key': tmdb_api_key,
+                        'query': movie_request
+                    },
+                    timeout=20
+                )
+
+                person_response.raise_for_status()
+                people = person_response.json().get('results', [])
+
+                if not people:
+                    return {
+                        'source': 'TMDB',
+                        'search_type': search_type,
+                        'movie_request': movie_request,
+                        'result_count': 0,
+                        'movies': [],
+                        'message': 'Director not found on TMDB.'
+                    }, 200
+
+                director = people[0]
+
+                credits_response = requests.get(
+                    f"https://api.themoviedb.org/3/person/{director['id']}/movie_credits",
+                    params={
+                        'api_key': tmdb_api_key
+                    },
+                    timeout=20
+                )
+
+                credits_response.raise_for_status()
+                credits = credits_response.json()
+
+                for crew_member in credits.get('crew', []):
+                    if crew_member.get('job') == 'Director':
+                        tmdb_movies.append(crew_member)
+
+            elif search_type == 'genre':
+                genre_response = requests.get(
+                    'https://api.themoviedb.org/3/genre/movie/list',
+                    params={
+                        'api_key': tmdb_api_key
+                    },
+                    timeout=20
+                )
+
+                genre_response.raise_for_status()
+
+                available_genres = genre_response.json().get(
+                    'genres', []
+                )
+
+                matching_genres = [
+                    genre for genre in available_genres
+                    if genre_request_matches(
+                        genre.get('name', ''),
+                        movie_request
+                    )
                 ]
-            })
 
-        return {
-            'movie_request': movie_request,
-            'result_count': len(movie_list),
-            'movies': movie_list
-        }, 200
+                if not matching_genres:
+                    return {
+                        'source': 'TMDB',
+                        'search_type': search_type,
+                        'movie_request': movie_request,
+                        'result_count': 0,
+                        'movies': [],
+                        'message': 'Genre not found on TMDB.'
+                    }, 200
+
+                genre_id = matching_genres[0]['id']
+
+                discover_response = requests.get(
+                    'https://api.themoviedb.org/3/discover/movie',
+                    params={
+                        'api_key': tmdb_api_key,
+                        'with_genres': genre_id,
+                        'sort_by': 'popularity.desc',
+                        'page': 1
+                    },
+                    timeout=20
+                )
+
+                discover_response.raise_for_status()
+
+                tmdb_movies = discover_response.json().get(
+                    'results', []
+                )
+
+            external_movies = []
+
+            for movie in tmdb_movies:
+                poster_path = movie.get('poster_path')
+
+                thumbnail_url = (
+                    f"https://image.tmdb.org/t/p/w500{poster_path}"
+                    if poster_path else ''
+                )
+
+                release_date = movie.get('release_date', '')
+
+                release_year = (
+                    int(release_date[:4])
+                    if release_date and release_date[:4].isdigit()
+                    else None
+                )
+
+                external_movies.append({
+                    'TMDB_ID': movie.get('id'),
+                    'title': movie.get('title'),
+                    'releaseYear': release_year,
+                    'synopsis': movie.get('overview'),
+                    'thumbnailURL': thumbnail_url,
+                    'ratingValue': movie.get('vote_average')
+                })
+
+            return {
+                'source': 'TMDB',
+                'search_type': search_type,
+                'movie_request': movie_request,
+                'result_count': len(external_movies),
+                'movies': external_movies
+            }, 200
+
+        except requests.RequestException:
+            movie_app.logger.exception('TMDB search failed.')
+
+            return {
+                'message': 'Error connecting to TMDB.'
+            }, 502
+
+        except Exception:
+            db.session.rollback()
+            movie_app.logger.exception('Movie search failed.')
+
+            return {
+                'message': 'An error occurred while searching for movies.'
+            }, 500
+
+
+    def genre_request_matches(genre_name, search_request):
+        return genre_name.strip().lower() == search_request.strip().lower()
+
 
     @movie_app.route('/add-to-movie-collections', methods=['POST'])
     @jwt_required()
@@ -613,47 +818,45 @@ def create_movie_app(testing=False):
                 'message': 'Failed to remove movie from your collection.'
             }, 500
 
+   
     @movie_app.route('/add-movie', methods=['POST'])
     def add_movie_to_collection():
         data = request.get_json(silent=True)
 
-        if (
-            not data
-            or not isinstance(data.get('title'), str)
-            or not data.get('title').strip()
-        ):
-            return {'message': 'Movie title is required.'}, 400
+        if not data or not data.get('TMDB_ID'):
+            return {
+                'message': 'TMDB movie ID is required.'
+            }, 400
 
-        search_query = data['title'].strip()
+        tmdb_movie_id = data['TMDB_ID']
         tmdb_api_key = os.getenv('TMDB_API_KEY')
 
         if not tmdb_api_key:
-            return {'message': 'TMDB API key is not setup.'}, 500
+            return {
+                'message': 'TMDB API key is not setup.'
+            }, 500
 
         try:
+            # Retrieve the exact movie selected by the user.
             tmdb_info = requests.get(
-                'https://api.themoviedb.org/3/search/movie',
-                params={
-                    'api_key': tmdb_api_key,
-                    'query': search_query
-                },
+                f'https://api.themoviedb.org/3/movie/{tmdb_movie_id}',
+                params={'api_key': tmdb_api_key},
                 timeout=20
             )
 
-            if tmdb_info.status_code != 200:
-                return {'message': 'TMDB API request failed.'}, 502
-
-            info_results = tmdb_info.json().get('results', [])
-
-            if not info_results:
+            if tmdb_info.status_code == 404:
                 return {
-                    'message': 'No results found for the given query on TMDB.'
+                    'message': 'Movie not found on TMDB.'
                 }, 404
 
-            movie_info = info_results[0]
-            tmdb_movie_id = movie_info['id']
-            external_rating = movie_info.get('vote_average')
+            if tmdb_info.status_code != 200:
+                return {
+                    'message': 'TMDB API request failed.'
+                }, 502
 
+            movie_info = tmdb_info.json()
+
+            # Check whether the movie already exists.
             this_movie = Movie.query.filter_by(
                 TMDB_ID=tmdb_movie_id
             ).first()
@@ -674,76 +877,52 @@ def create_movie_app(testing=False):
             )
 
             if this_movie:
-                this_movie.title = movie_info['title']
-                this_movie.releaseYear = release_year
-                this_movie.synopsis = movie_info.get('overview')
-                this_movie.thumbnailURL = thumbnail_url
+                return {
+                    'message': 'This movie already exists in the catalogue.',
+                    'movieID': str(this_movie.movieID),
+                    'TMDB_ID': this_movie.TMDB_ID,
+                    'title': this_movie.title
+                }, 200
 
-                message = 'Movie information updated successfully.'
-
-            else:
-                this_movie = Movie(
-                    TMDB_ID=tmdb_movie_id,
-                    title=movie_info['title'],
-                    releaseYear=release_year,
-                    synopsis=movie_info.get('overview'),
-                    thumbnailURL=thumbnail_url
-                )
-
-                db.session.add(this_movie)
-                db.session.flush()
-
-                message = 'Movie added to the database successfully.'
-
-            movie_details_response = requests.get(
-                f'https://api.themoviedb.org/3/movie/{tmdb_movie_id}',
-                params={'api_key': tmdb_api_key},
-                timeout=20
+            # Create the movie record.
+            this_movie = Movie(
+                TMDB_ID=tmdb_movie_id,
+                title=movie_info['title'],
+                releaseYear=release_year,
+                synopsis=movie_info.get('overview'),
+                thumbnailURL=thumbnail_url
             )
 
-            if movie_details_response.status_code != 200:
-                db.session.rollback()
-                return {
-                    'message': 'Could not retrieve movie genres from TMDB.'
-                }, 502
+            db.session.add(this_movie)
+            db.session.flush()
 
-            movie_details = movie_details_response.json()
-
-            tmdb_genres = movie_details.get('genres', [])
-
-            for tmdb_genre in tmdb_genres:
+            # Add the movie's existing genres.
+            for tmdb_genre in movie_info.get('genres', []):
                 existing_genre = Genre.query.filter(
-                    db.func.lower(Genre.genre) == tmdb_genre['name'].lower()
+                    db.func.lower(Genre.genre) ==
+                    tmdb_genre['name'].lower()
                 ).first()
 
                 if existing_genre:
-                    if existing_genre not in this_movie.genres:
-                        this_movie.genres.append(existing_genre)
+                    this_movie.genres.append(existing_genre)
+
+            # Add or update the TMDB rating.
+            external_rating = movie_info.get('vote_average')
 
             if external_rating is not None:
-                existing_rating = ThirdPartyRating.query.filter_by(
+                this_rating = ThirdPartyRating(
                     movieID=this_movie.movieID,
-                    externalRater='TMDB'
-                ).first()
+                    userID=None,
+                    externalRater='TMDB',
+                    ratingValue=str(external_rating)
+                )
 
-                if existing_rating:
-                    existing_rating.ratingValue = str(external_rating)
-                    existing_rating.userID = None
-
-                else:
-                    this_rating = ThirdPartyRating(
-                        movieID=this_movie.movieID,
-                        userID=None,
-                        externalRater='TMDB',
-                        ratingValue=str(external_rating)
-                    )
-
-                    db.session.add(this_rating)
+                db.session.add(this_rating)
 
             db.session.commit()
 
             return {
-                'message': message,
+                'message': 'Movie added to the catalogue successfully.',
                 'movieID': str(this_movie.movieID),
                 'TMDB_ID': this_movie.TMDB_ID,
                 'title': this_movie.title,
@@ -753,11 +932,11 @@ def create_movie_app(testing=False):
                 'genres': [
                     genre.genre for genre in this_movie.genres
                 ]
-            }, 200
+            }, 201
 
         except requests.RequestException:
             db.session.rollback()
-            movie_app.logger.exception("Error connecting to TMDB.")
+            movie_app.logger.exception('Error connecting to TMDB.')
 
             return {
                 'message': 'Error connecting to TMDB.'
@@ -766,12 +945,13 @@ def create_movie_app(testing=False):
         except Exception:
             db.session.rollback()
             movie_app.logger.exception(
-                "Failed to save movie information."
+                'Failed to save movie information.'
             )
 
             return {
                 'message': 'Failed to save movie information.'
             }, 500
+
     
     @movie_app.route('/home-movieDisplay', methods=['GET'])
     def home_movie_display():
@@ -805,6 +985,9 @@ def create_movie_app(testing=False):
                             'ratingValue': rating.ratingValue
                         }
                         for rating in movie.thirdPartyRatings
+                    ],
+                    'directors':[
+                        director.directorName for director in movie.directors
                     ]
                 })
 

@@ -172,7 +172,7 @@ class UserCollection(db.Model):
         nullable=False,
     )
 
-    rating = db.Column(db.Numeric(2, 1), nullable=True)
+    rating = db.Column(db.Numeric(3, 1), nullable=True)
 
     user = db.relationship("User", back_populates="collections")
     movie = db.relationship("Movie", back_populates="collections")

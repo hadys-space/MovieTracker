@@ -159,7 +159,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 15),
 
                     Text(
-                      'Movie Tracker',
+                      'Popcorn and M&M Vault',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: colours.primary,
