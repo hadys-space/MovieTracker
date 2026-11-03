@@ -7,3 +7,6 @@ python_dotenv
 ruff
 requests
 jsonify
+pytest
+Flask-JWT_Extended
+Flask-Cors
