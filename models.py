@@ -4,7 +4,6 @@ from sqlalchemy.dialects.mssql import UNIQUEIDENTIFIER
 from sqlalchemy import UniqueConstraint
 from extensions import db
 
-# Movies and Directors relationship
 MovieDirectors = db.Table(
     
     "MovieDirectors",

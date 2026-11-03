@@ -1,10 +1,8 @@
 
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-
 import 'models/movie.dart';
 import 'services/movie_service.dart';
 import 'screens/login_screen.dart';
@@ -26,7 +24,7 @@ class MyApp extends StatelessWidget {
       themeMode: ThemeMode.system,
       theme: ThemeData(
         brightness: Brightness.light,
-        primarySwatch: Colors.teal,
+        primarySwatch: Colors.purple,
         scaffoldBackgroundColor: Colors.white,
       ),
       darkTheme: ThemeData(
@@ -75,7 +73,6 @@ class _MyHomePageState extends State<MyHomePage> {
   bool _isSearching = false;
   bool _hasSearched = false;
   bool _isAddingMovie = false;
-
   String _searchSource = 'catalogue';
   String? _searchError;
 
@@ -98,41 +95,40 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
-  // Search movies by title, genre or director.
-  Future<void> searchMovies() async {
-    final query = _searchController.text.trim();
+Future<void> searchMovies() async {
+  final query = _searchController.text.trim();
 
-    if (query.isEmpty) {
-      clearSearch();
-      return;
-    }
+  if (query.isEmpty) {
+    clearSearch();
+    return;
+  }
+
+  setState(() {
+    _isSearching = true;
+    _hasSearched = true;
+    _searchError = null;
+    _searchResults = [];
+  });
+
+  try {
+    final result = await movieService.searchMovies(query);
+
+    if (!mounted) return;
 
     setState(() {
-      _isSearching = true;
-      _hasSearched = true;
-      _searchError = null;
-      _searchResults = [];
+      _searchSource = result['source'];
+      _searchResults = result['movies'];
+      _isSearching = false;
     });
+  } catch (e) {
+    if (!mounted) return;
 
-    try {
-      final result = await movieService.searchMovies(query);
-
-      if (!mounted) return;
-
-      setState(() {
-        _searchSource = result['source'];
-        _searchResults = result['movies'];
-        _isSearching = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-
-      setState(() {
-        _isSearching = false;
-        _searchError = e.toString();
-      });
-    }
+    setState(() {
+      _isSearching = false;
+      _searchError = e.toString();
+    });
   }
+}
 
   // Clear search and return to the original catalogue.
   void clearSearch() {
@@ -273,19 +269,34 @@ class _MyHomePageState extends State<MyHomePage> {
         title: const Text(
           'Popcorn and M&M Vault',
           style: TextStyle(
-            color: Colors.teal,
+            color: Colors.purple,
             fontWeight: FontWeight.bold,
           ),
         ),
         actions: [
-          if (_isLoggedIn)
+          if (_isLoggedIn) ...[
             TextButton(
               onPressed: () {
                 Navigator.pushNamed(context, '/collection');
               },
               child: const Text('My Collection'),
-            )
-          else ...[
+            ),
+            IconButton(
+              icon: const Icon(Icons.logout),
+              tooltip: 'Logout',
+              onPressed: () async {
+                await _storage.delete(key: 'access_token');
+                await _storage.delete(key: 'userID');
+
+                if (!context.mounted) return;
+
+                Navigator.of(context).pushNamedAndRemoveUntil(
+                  '/login',
+                  (route) => false,
+                );
+              },
+            ),
+          ] else ...[
             TextButton(
               onPressed: () {
                 Navigator.pushNamed(context, '/login').then((_) {
@@ -310,13 +321,14 @@ class _MyHomePageState extends State<MyHomePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              
               const SizedBox(height: 10),
+
               const Text(
                 'Forgetting your favourite movies? '
                 'Just add them to your collection.',
                 style: TextStyle(fontSize: 21),
               ),
+
               const SizedBox(height: 20),
 
               // Search bar.
@@ -341,7 +353,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
               ),
 
-              const SizedBox(height: 25),
+              const SizedBox(height: 10),
 
               Text(
                 _hasSearched ? 'Search Results' : 'Browse Movies',
@@ -423,6 +435,7 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
+  // Display movies in a responsive grid.
   Widget buildMovieGrid(List<Movie> movies) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -478,78 +491,80 @@ class MovieCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      elevation: 3,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: movie.thumbnailURL.isNotEmpty
-                ? Image.network(
-                    movie.thumbnailURL,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return const Center(
-                        child: Icon(
-                          Icons.movie,
-                          size: 50,
-                        ),
-                      );
-                    },
-                  )
-                : const Center(
-                    child: Icon(
-                      Icons.movie,
-                      size: 50,
+    return Tooltip(
+      message: movie.synopsis?.isNotEmpty == true
+          ? movie.synopsis!
+          : 'Synopsis is unavailable',
+      waitDuration: const Duration(milliseconds: 500),
+      showDuration: const Duration(seconds: 5),
+      preferBelow: false,
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        elevation: 3,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: movie.thumbnailURL.isNotEmpty
+                  ? Image.network(
+                      movie.thumbnailURL,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Center(
+                          child: Icon(Icons.movie, size: 50),
+                        );
+                      },
+                    )
+                  : const Center(
+                      child: Icon(Icons.movie, size: 50),
                     ),
-                  ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  movie.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  movie.directors.isNotEmpty
-                      ? 'Director: ${movie.directors.join(', ')}'
-                      : 'Director: Unknown',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  movie.rating != null
-                      ? 'Third Party Rating: ${movie.rating}'
-                      : 'Third Party Rating: Not available',
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: isAddingMovie
-                        ? null
-                        : onAddToCollection,
-                    child: Text(
-                      isAddingMovie
-                          ? 'Adding...'
-                          : 'Add to Collection',
-                    ),
-                  ),
-                ),
-              ],
             ),
-          ),
-        ],
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    movie.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    movie.directors.isNotEmpty
+                        ? 'Director: ${movie.directors.join(', ')}'
+                        : 'Director: Unknown',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    movie.rating != null
+                        ? 'Third Party Rating: ${movie.rating}'
+                        : 'Third Party Rating: Not available',
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: isAddingMovie
+                          ? null
+                          : onAddToCollection,
+                      child: Text(
+                        isAddingMovie
+                            ? 'Adding...'
+                            : 'Add to Collection',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

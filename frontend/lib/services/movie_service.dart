@@ -1,7 +1,6 @@
 
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-
 import '../models/movie.dart';
 
 class MovieService {
@@ -10,7 +9,6 @@ class MovieService {
   static const String apiUrl =
       '$baseUrl/home-movieDisplay';
 
-  // Load the existing movie catalogue.
   Future<List<Movie>> fetchMovies() async {
     final response = await http.get(Uri.parse(apiUrl));
 
@@ -41,35 +39,34 @@ class MovieService {
     );
   }
 
-  // Search the local catalogue first, then TMDB through Flask.
-  Future<Map<String, dynamic>> searchMovies(String query) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/search').replace(
-        queryParameters: {'query': query},
-      ),
-    );
+Future<Map<String, dynamic>> searchMovies(String query) async {
+  final response = await http.get(
+    Uri.parse('$baseUrl/search').replace(
+      queryParameters: {
+        'query': query,
+      },
+    ),
+  );
 
-    final data = jsonDecode(response.body);
+  final data = jsonDecode(response.body);
 
-    if (response.statusCode == 200) {
-      final List results = data['movies'] ?? [];
+  if (response.statusCode == 200) {
+    final List results = data['movies'] ?? [];
 
-      final movies = results
-          .map((item) => Movie.fromJson(item))
-          .toList();
+    final movies = results
+        .map((item) => Movie.fromJson(item))
+        .toList();
 
-      return {
-        'source': data['source'] ?? 'catalogue',
-        'movies': movies,
-      };
-    }
-
-    throw Exception(
-      data['message'] ?? 'Unable to search for movies.',
-    );
+    return {
+      'source': data['source'] ?? 'catalogue',
+      'movies': movies,
+    };
   }
 
-  // Add a selected TMDB movie to the local database.
+  throw Exception(
+    data['message'] ?? 'Unable to search for movies.',
+  );
+  }
   Future<String> addMovieToCatalogue(int tmdbId) async {
     final response = await http.post(
       Uri.parse('$baseUrl/add-movie'),
@@ -90,7 +87,6 @@ class MovieService {
       );
     }
 
-    // Supports either a top-level movieID or a nested movie object.
     final movieData = data['movie'] is Map
         ? data['movie']
         : data;

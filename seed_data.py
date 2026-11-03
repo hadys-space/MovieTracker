@@ -1,18 +1,265 @@
 
 from decimal import Decimal
-
+import os
+import requests
+import time
 from werkzeug.security import generate_password_hash
-
 from app import create_movie_app
 from extensions import db
-from models import (
-    Director,
-    Genre,
-    Movie,
-    ThirdPartyRating,
-    User,
-    UserCollection,
-)
+from models import (Director, Genre,Movie,ThirdPartyRating,User,UserCollection,)
+
+
+def seed_tmdb_movies(existing_seeded_movies, target_new_movies=1000):
+
+    api_key = os.getenv("TMDB_API_KEY")
+
+    if not api_key:
+        raise ValueError("TMDB_API_KEY was not found.")
+
+    session = requests.Session()
+
+    base_url = "https://api.themoviedb.org/3"
+
+    
+    response = session.get(
+        f"{base_url}/genre/movie/list",
+        params={"api_key": api_key},
+        timeout=20
+    )
+
+    response.raise_for_status()
+
+    tmdb_genres = {
+        item["id"]: item["name"]
+        for item in response.json()["genres"]
+    }
+
+   
+    genre_cache = {
+        genre.genre: genre
+        for genre in Genre.query.all()
+    }
+
+    
+    for name in tmdb_genres.values():
+
+        if name not in genre_cache:
+
+            genre = Genre(genre=name)
+
+            db.session.add(genre)
+
+            genre_cache[name] = genre
+
+    db.session.flush()
+
+    
+    director_cache = {
+        director.directorName: director
+        for director in Director.query.all()
+    }
+
+    
+    existing_tmdb_ids = {
+        row[0]
+        for row in db.session.query(Movie.TMDB_ID)
+        .filter(Movie.TMDB_ID.isnot(None))
+        .all()
+    }
+
+    # Save or update a TMDB rating
+    def save_tmdb_rating(movie, value):
+
+        rating = ThirdPartyRating.query.filter_by(
+            movieID=movie.movieID,
+            externalRater="TMDB"
+        ).first()
+
+        rating_value = (
+            f"{float(value):.1f}"
+            if value is not None
+            else "Not available"
+        )
+
+        if rating is None:
+
+            rating = ThirdPartyRating(
+                movie=movie,
+                userID=None,
+                externalRater="TMDB",
+                ratingValue=rating_value
+            )
+
+            db.session.add(rating)
+
+        else:
+            rating.ratingValue = rating_value
+
+   
+    for movie in existing_seeded_movies:
+
+        if movie.TMDB_ID is None:
+            continue
+
+        response = session.get(
+            f"{base_url}/movie/{movie.TMDB_ID}",
+            params={"api_key": api_key},
+            timeout=20
+        )
+
+        response.raise_for_status()
+
+        save_tmdb_rating(
+            movie,
+            response.json().get("vote_average")
+        )
+
+
+    added_movies = 0
+    page = 1
+    max_pages = 500
+
+    while added_movies < target_new_movies and page <= max_pages:
+
+        response = session.get(
+            f"{base_url}/discover/movie",
+            params={
+                "api_key": api_key,
+                "sort_by": "popularity.desc",
+                "include_adult": "false",
+                "include_video": "false",
+                "page": page
+            },
+            timeout=20
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        for item in data.get("results", []):
+
+            if added_movies >= target_new_movies:
+                break
+
+            tmdb_id = item["id"]
+
+           
+            if tmdb_id in existing_tmdb_ids:
+                continue
+
+    
+            release_date = item.get("release_date")
+
+            release_year = (
+                int(release_date[:4])
+                if release_date and len(release_date) >= 4
+                else None
+            )
+
+           
+            poster_path = item.get("poster_path")
+
+            thumbnail_url = (
+                "https://image.tmdb.org/t/p/w500" + poster_path
+                if poster_path
+                else None
+            )
+
+            
+            movie = Movie(
+                TMDB_ID=tmdb_id,
+                title=item["title"],
+                releaseYear=release_year,
+                synopsis=item.get("overview"),
+                thumbnailURL=thumbnail_url
+            )
+
+            db.session.add(movie)
+
+            movie.genres = [
+                genre_cache[tmdb_genres[genre_id]]
+                for genre_id in item.get("genre_ids", [])
+                if genre_id in tmdb_genres
+            ]
+
+            try:
+
+                credits_response = session.get(
+                    f"{base_url}/movie/{tmdb_id}/credits",
+                    params={"api_key": api_key},
+                    timeout=20
+                )
+
+                credits_response.raise_for_status()
+
+                credits = credits_response.json()
+
+                director_names = [
+                    person["name"]
+                    for person in credits.get("crew", [])
+                    if person.get("job") == "Director"
+                ]
+
+                movie.directors = []
+
+                for name in director_names:
+
+                    if name not in director_cache:
+
+                        director = Director(
+                            directorName=name
+                        )
+
+                        db.session.add(director)
+
+                        director_cache[name] = director
+
+                    movie.directors.append(
+                        director_cache[name]
+                    )
+
+            except requests.RequestException as error:
+
+                print(
+                    f"Could not retrieve directors for "
+                    f"{item['title']}: {error}"
+                )
+
+            save_tmdb_rating(
+                movie,
+                item.get("vote_average")
+            )
+
+            existing_tmdb_ids.add(tmdb_id)
+
+            added_movies += 1
+
+            if added_movies % 50 == 0:
+
+                print(
+                    f"{added_movies} new movies added..."
+                )
+
+            time.sleep(0.05)
+
+        if page >= data.get("total_pages", 0):
+            break
+
+        page += 1
+
+    ThirdPartyRating.query.filter_by(
+        externalRater="Demo Source"
+    ).delete(synchronize_session=False)
+
+    print(f"Additional movies added: {added_movies}")
+
+    if added_movies < target_new_movies:
+
+        print(
+            "TMDB returned fewer new movies than requested."
+        )
+
 
 
 def data_seeding():
@@ -204,7 +451,10 @@ def data_seeding():
 
             db.session.flush()
 
-            # 4. USERS
+            seed_tmdb_movies(
+                    existing_seeded_movies=movies.values(),
+                    target_new_movies=1000
+            )
             user_data = [
                 ("shaniqu34", "moviefan1@example.com", "shaniqu34@yopmail.com!"),
                 ("carmenWillow34", "moviefan2@example.com", "carmenWillow34@yopmail.com!"),
@@ -267,22 +517,7 @@ def data_seeding():
                 else:
                     collection.rating = rating
 
-            
-
-            for title, movie in movies.items():
-                rating = ThirdPartyRating.query.filter_by(
-                    movieID=movie.movieID,
-                    externalRater="Demo Source",
-                ).first()
-
-                if rating is None:
-                    rating = ThirdPartyRating(
-                        movieID=movie.movieID,
-                        userID=users["shaniqu34"].userID,
-                        externalRater="Demo Source",
-                        ratingValue="Not verified",
-                    )
-                    db.session.add(rating)
+    
 
             # Save all changes.
             db.session.commit()

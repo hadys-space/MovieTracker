@@ -1,6 +1,5 @@
 
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -28,16 +27,13 @@ class _CollectionScreenState extends State<CollectionScreen> {
     fetchCollection();
   }
 
-  // Retrieve the logged-in user's movie collection.
+  
   Future<void> fetchCollection() async {
     try {
       final token = await _storage.read(key: 'access_token');
       final userID = await _storage.read(key: 'userID');
 
-      if (token == null ||
-          token.isEmpty ||
-          userID == null ||
-          userID.isEmpty) {
+      if (token == null || token.isEmpty || userID == null || userID.isEmpty) {
         throw Exception('Login information not found.');
       }
 
@@ -74,7 +70,6 @@ class _CollectionScreenState extends State<CollectionScreen> {
     }
   }
 
-  // Format genre names whether the backend returns strings or objects.
   String getGenres(dynamic genres) {
     if (genres == null || genres is! List || genres.isEmpty) {
       return 'No genres available';
@@ -89,7 +84,6 @@ class _CollectionScreenState extends State<CollectionScreen> {
     }).where((genre) => genre.isNotEmpty).join(', ');
   }
 
-  // Format third-party ratings for display.
   String getThirdPartyRatings(dynamic ratings) {
     if (ratings == null || ratings is! List || ratings.isEmpty) {
       return 'No third-party ratings available.';
@@ -107,14 +101,12 @@ class _CollectionScreenState extends State<CollectionScreen> {
     }).join('\n');
   }
 
-  // Add or update a personal movie rating.
   Future<void> rateMovie(
     String collectionID,
     dynamic currentRating,
   ) async {
     final isUpdating = currentRating != null;
 
-    // Open the rating dialog.
     final newRating = await showDialog<double>(
       context: context,
       builder: (dialogContext) {
@@ -184,7 +176,6 @@ class _CollectionScreenState extends State<CollectionScreen> {
         ),
       );
 
-      // Refresh the collection after a successful rating submission.
       if (response.statusCode == 200 ||
           response.statusCode == 201) {
         await fetchCollection();
@@ -202,7 +193,6 @@ class _CollectionScreenState extends State<CollectionScreen> {
     }
   }
 
-  // Delete a movie from the user's collection.
   Future<void> deleteMovieFromCollection(
     String collectionID,
   ) async {
@@ -219,7 +209,6 @@ class _CollectionScreenState extends State<CollectionScreen> {
       return;
     }
 
-    // Ask the user to confirm before deleting.
     final confirmDelete = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
@@ -286,8 +275,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
     }
   }
 
-  // Open the existing movie catalogue in main.dart.
-  // Refresh the collection when the user returns.
+  
   Future<void> navigateToMovies() async {
     await Navigator.pushNamed(context, '/');
 
@@ -470,7 +458,6 @@ class _CollectionScreenState extends State<CollectionScreen> {
 
                                 const SizedBox(height: 5),
 
-                                // Rate or update personal rating.
                                 TextButton.icon(
                                   onPressed: collectionID == null
                                       ? null
@@ -526,7 +513,6 @@ class _CollectionScreenState extends State<CollectionScreen> {
   }
 }
 
-// Separate stateful widget to manage the rating dialog.
 class RatingDialog extends StatefulWidget {
   final dynamic currentRating;
   final bool isUpdating;

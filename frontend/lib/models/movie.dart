@@ -35,7 +35,6 @@ class Movie {
       }
     }
 
-    // Also support a direct ratingValue from TMDB search results.
     movieRating ??= double.tryParse(
       (json['ratingValue'] ?? json['vote_average'] ?? '').toString(),
     );
