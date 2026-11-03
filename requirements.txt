@@ -5,3 +5,5 @@ SQLAlchemy
 pyodbc
 python_dotenv
 ruff
+request
+jsonify
